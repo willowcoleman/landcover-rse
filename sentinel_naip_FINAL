@@ -1,0 +1,424 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var building = ee.FeatureCollection("users/wcoleman/buildings_clipped_20190627_sub"),
+    shrub = ee.FeatureCollection("users/wcoleman/chaparral_polygon_20190217_26911"),
+    grass = ee.FeatureCollection("users/wcoleman/grass_polygon_20181205_26911"),
+    lake = ee.FeatureCollection("users/wcoleman/lake_polygon_20190309_26911"),
+    npv = ee.FeatureCollection("users/wcoleman/npv_polygon_20190217_26911"),
+    pool = ee.FeatureCollection("users/wcoleman/pool_polygon_20190309_26911"),
+    tree = ee.FeatureCollection("users/wcoleman/tree_polygon_20181205_26911"),
+    socab_sb = ee.FeatureCollection("users/wcoleman/socab_sb"),
+    socab_ri = ee.FeatureCollection("users/wcoleman/socab_ri"),
+    socab_or = ee.FeatureCollection("users/wcoleman/socab_or"),
+    socab_la = ee.FeatureCollection("users/wcoleman/socab_la"),
+    urban_shadow = ee.FeatureCollection("users/wcoleman/urban_shadow"),
+    SoCAB = ee.FeatureCollection("users/wcoleman/socab_out"),
+    non_urban = ee.FeatureCollection("users/wcoleman/test_non_urban"),
+    urban = ee.FeatureCollection("users/wcoleman/test_urban"),
+    road = ee.FeatureCollection("users/wcoleman/roads_clipped_20190627_sub");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+/////// SHAPEFILES TO IMPORT /////// 
+
+// CLASSIFICATION TRAINING POLYGONS - from NAIP 2016 unless otherwise noted 
+// building: building polygons from Microsoft Open Street Maps
+// shrub: shrub/chaparral polygons 
+// grass: managed grass polygons
+// lake: lakes/non-artificial water polygons
+// tree: tree polygons
+// npv: non-photosynthetic vegetation (npv) polygons
+// pool: pool/artificial water polygons 
+// road: road vectors from county GIS servers
+// urban_shadow: shadow polygons 
+
+// CLASSIFICATION DOMAIN SHAPEFILES 
+// SoCAB: polygon of SoCAB (entire classification domain)
+// urban: polygon of urban areas of SoCAB
+// non_urban: polygon of non-urban areas of SoCAB
+// socab_la: polygon of Los Angeles County (subset of classification domain)
+// socab_ri: polygon of Riverside County (subset of classification domain)
+// socab_or: polygon of Orange County (subset of classification domain)
+// socab_sb: polygon of San Bernardino County (subset of classification domain)
+
+/////////////////////////////////////////////////////////////
+
+// GLOBAL VARIABLES 
+var num_training_points = 5000; // number of training points per land cover class
+var split = 0.8; // 80% training data, 20% validating data
+var boundingBox = socab_sb; // classification domain shapefile 
+
+///////////////////////////////////////////////////////////// 
+
+// EXTRACT MODEL TRAINING/VALIDATING DATA 
+// Create impervious class (building + road)
+var impervious = building.merge(road);
+// Create water class (pool + lake)
+var water = pool.merge(lake);
+// Randomly select training points from each class 
+var impervious_f = ee.FeatureCollection.randomPoints(impervious,num_training_points);
+var tree_f = ee.FeatureCollection.randomPoints(tree,num_training_points);
+var grass_f = ee.FeatureCollection.randomPoints(grass,num_training_points); 
+var shrub_f = ee.FeatureCollection.randomPoints(shrub,num_training_points);
+var npv_f = ee.FeatureCollection.randomPoints(npv,num_training_points);
+var water_f = ee.FeatureCollection.randomPoints(water,num_training_points);
+var shadow_f = ee.FeatureCollection.randomPoints(urban_shadow, num_training_points);
+
+///////////////////////////////////////////////////////////// 
+
+// SPLIT INTO TRAINING AND VALIDATING DATA 
+// Assign random numbers to each pixel
+var getRand = function(featureCol){
+  var rand = featureCol.randomColumn();
+  return rand;
+};
+// Split data into 80% training
+var splitTrain = function(rand,split){
+  var training = rand.filter(ee.Filter.lt('random', split));
+  return training;
+};
+// Split data into remaining 20% validating
+var splitValidate = function(rand,split){
+  var validating = rand.filter(ee.Filter.gte('random', split));
+  return validating;
+};
+// Split impervious data 
+var impervious_rand = getRand(impervious_f);
+var impervious_train = splitTrain(impervious_rand,split);
+var impervious_validate = splitValidate(impervious_rand,split);
+// Split tree data 
+var tree_rand = getRand(tree_f);
+var tree_train = splitTrain(tree_rand,split);
+var tree_validate = splitValidate(tree_rand,split);
+// Split grass data
+var grass_rand = getRand(grass_f);
+var grass_train = splitTrain(grass_rand,split);
+var grass_validate = splitValidate(grass_rand,split);
+// Split shrub data
+var shrub_rand = getRand(shrub_f);
+var shrub_train = splitTrain(shrub_rand,split);
+var shrub_validate = splitValidate(shrub_rand,split);
+// Split NPV data
+var npv_rand = getRand(npv_f);
+var npv_train = splitTrain(npv_rand,split);
+var npv_validate = splitValidate(npv_rand,split);
+// Split water data 
+var water_rand = getRand(water_f);
+var water_train = splitTrain(water_rand,split);
+var water_validate = splitValidate(water_rand,split);
+// Split shadow test data
+var shadow_rand = getRand(shadow_f);
+var shadow_train = splitTrain(shadow_rand,split);
+var shadow_validate = splitValidate(shadow_rand,split);
+
+///////////////////////////////////////////////////////////// 
+
+// READ IN IMAGERY
+// Read in NAIP imagery (0.6 m in California)
+var naip = ee.ImageCollection("USDA/NAIP/DOQQ")
+  .filterBounds(boundingBox)
+  .filterDate('2016-01-01', '2016-12-31');
+// Read in Sentinel-2 imagery (10-60 m)
+// ** Determine green/non-green dates externally **
+var sentinel_green = ee.ImageCollection("COPERNICUS/S2")
+  .filterBounds(boundingBox)
+  .filterDate('2018-02-01', '2018-06-30')
+  .select(['B2','B3','B4','B8','B11']);
+var non_green1 = ee.ImageCollection("COPERNICUS/S2")
+  .filterBounds(boundingBox)
+  .filterDate('2018-01-01', '2018-01-31')
+  .select(['B2','B3','B4','B8','B11']);
+var non_green2 = ee.ImageCollection("COPERNICUS/S2")
+  .filterBounds(boundingBox)
+  .filterDate('2018-07-01', '2018-12-31')
+  .select(['B2','B3','B4','B8','B11']);
+var sentinel_nonGreen = non_green1.merge(non_green2);
+
+///////////////////////////////////////////////////////////// 
+
+// WATER MASKING PRIOR TO CLASSIFICATION WITH MNDWI AND NDWI
+// Stack NAIP and Sentinel-2 data layers  
+var sentinel_stack = sentinel_green.median();
+var naip_stack = naip.mosaic();
+var early_stack = naip_stack.addBands(sentinel_stack);
+// MNDWI mask from Sentinel-2
+var mndwi = early_stack.normalizedDifference(['B3','B11']);
+var mndwi_mask = mndwi.gte(0.3).eq(1);
+// NDWI mask from NAIP 
+var ndwi = early_stack.normalizedDifference(['G', 'N']);
+var ndwi_mask = ndwi.gte(0.3).eq(1);
+
+// Masking water in urban areas (MNDWI and NDWI masks)
+var urbanMaskWater = function(image){
+  image = image.updateMask(mndwi_mask.not());
+  image = image.updateMask(ndwi_mask.not());
+  return image;
+};
+// Masking water in non-urban areas (MNDWI mask only)
+var nonUrbanMaskWater = function(image){
+  image = image.updateMask(mndwi_mask.not());
+  return image;
+};
+
+// Apply masking to NAIP and Sentinel-2 imagery separately (NAIP in urban areas, Sentinel-2 in non-urban)
+var maskedNaip = naip.map(urbanMaskWater);
+var maskedSentinel_green = sentinel_green.map(nonUrbanMaskWater);
+var maskedSentinel_nonGreen = sentinel_nonGreen.map(nonUrbanMaskWater);
+
+///////////////////////////////////////////////////////////// 
+
+// IMAGERY BAND PREPROCESSING 
+
+// Subset Sentinel-2 bands needed for classification
+maskedSentinel_green = maskedSentinel_green.select(['B2','B3','B4','B8']);
+maskedSentinel_nonGreen = maskedSentinel_nonGreen.select(['B2','B3','B4','B8']);
+
+// NDVI calculation for NAIP 
+var addNDVI = function(image) {
+  var ndvi = image.normalizedDifference(['N', 'R']).rename('NDVI');
+  return image.addBands(ndvi);
+};
+var withNDVI = maskedNaip.map(addNDVI);
+
+// NDVI calculation for Sentinel-2
+var addNDVI_sentinel = function(image){
+  image = image.rename('B','G','R','N');
+  var ndvi = image.normalizedDifference(['N', 'R']).rename('NDVI');
+  return image.addBands(ndvi);
+};
+var green_withNDVI = maskedSentinel_green.map(addNDVI_sentinel);
+var non_withNDVI = maskedSentinel_nonGreen.map(addNDVI_sentinel);
+
+// Calculate superpixels for NAIP 
+var superpixeled = function(image){
+  var superpixel = ee.Algorithms.Image.Segmentation.SNIC({
+    image:image,
+    size:10
+    });
+  superpixel = superpixel.rename('clusters','R','G','B','N','NDVI','seeds');
+  return superpixel;
+};
+var withSuperpixel = withNDVI.map(superpixeled);
+
+// Calculate textural features using gray-level co-occurence matrices (GLCM) for NAIP and Sentinel-2
+var getGLCM = function(image){
+  var int_image = image.int();
+  var glcm = int_image.glcmTexture();
+  var contrast = glcm.select('N_contrast');
+  var entropy = glcm.select('N_ent');
+  var correlation = glcm.select('N_corr');
+  var inertia = glcm.select('N_inertia');
+  var glcm_image = ee.Image([contrast,entropy,correlation,inertia]);
+  return image.addBands(glcm_image);
+};
+var withGLCM = withSuperpixel.map(getGLCM);
+var green_withGLCM = green_withNDVI.map(getGLCM);
+var non_withGLCM = non_withNDVI.map(getGLCM);
+
+///////////////////////////////////////////////////////////// 
+
+// CREATE NAIP MEDIAN COMPOSITE (reduce to single mosaicked image)
+var naip_median = withGLCM.median();
+var naip_proj = ee.Projection('EPSG:26911');
+// Reproject to NAD83 / UTM zone 11N
+var reproj_SoCAB_naip = naip_median.reproject(naip_proj, [0.6,0,499848,0,-0.6,3762312]);
+reproj_SoCAB_naip = reproj_SoCAB_naip.rename('clusters','R_naip','G_naip','B_naip','NIR_naip','NDVI_naip','seeds','contrast_naip','ent_naip','corr_naip','inertia_naip');
+
+// CREATE SENTINEL-2 MEDIAN COMPOSITE (reduce to single mosaicked image )
+var green_reduce = green_withGLCM.median().clip(boundingBox);
+var non_reduce = non_withGLCM.median().clip(boundingBox);
+green_reduce = green_reduce.rename('B_green','G_green','R_green','NIR_green','NDVI_green','contrast_green','ent_green','corr_green','inertia_green');
+non_reduce = non_reduce.rename('B_non','G_non','R_non','NIR_non','NDVI_non','contrast_non','ent_non','corr_non','inertia_non');
+var sentinel_stacked = green_reduce.addBands(non_reduce);
+var sentinel_proj = ee.Projection('EPSG:32611');
+// Reproject to WGS 84 / UTM zone 11N
+var reproj_SoCAB_sentinel = sentinel_stacked.reproject(sentinel_proj,[10,0,399960,0,-10,3700020]);
+// Rescale Sentinel-2 imagery to NAIP projection/scale
+var sentinel_rescale = reproj_SoCAB_sentinel.reproject({
+  crs: ee.Projection('EPSG:26911'),
+  scale: 0.6
+});
+
+// Stack Sentinel-2 and NAIP imagery 
+var stacked = reproj_SoCAB_naip.addBands(sentinel_rescale);
+
+///////////////////////////////////////////////////////////// 
+
+// LABEL TRAINING/VALIDATING DATA WITH LAND COVER CLASSES
+var imp_addLabel = function(feature){
+  var labeled = feature.set('landcover', 0);
+  return labeled;
+};
+var tree_addLabel = function(feature){
+  var labeled = feature.set('landcover', 1);
+  return labeled;
+};
+var grass_addLabel = function(feature){
+  var labeled = feature.set('landcover', 2);
+  return labeled;
+};
+var shrub_addLabel = function(feature){
+  var labeled = feature.set('landcover', 3);
+  return labeled;
+};
+var npv_addLabel = function(feature){
+  var labeled = feature.set('landcover', 4);
+  return labeled;
+};
+var water_addLabel = function(feature){
+  var labeled = feature.set('landcover', 5);
+  return labeled;
+};
+var shadow_addLabel = function(feature){
+  var labeled = feature.set('landcover',6);
+  return labeled;
+};
+
+// _t = training data, _v = validating data 
+var impervious_t = ee.FeatureCollection(impervious_train.map(imp_addLabel));
+var impervious_v = ee.FeatureCollection(impervious_validate.map(imp_addLabel));
+var tree_t = ee.FeatureCollection(tree_train.map(tree_addLabel));
+var tree_v = ee.FeatureCollection(tree_validate.map(tree_addLabel));
+var grass_t = ee.FeatureCollection(grass_train.map(grass_addLabel));
+var grass_v = ee.FeatureCollection(grass_validate.map(grass_addLabel));
+var shrub_t = ee.FeatureCollection(shrub_train.map(shrub_addLabel));
+var shrub_v = ee.FeatureCollection(shrub_validate.map(shrub_addLabel));
+var npv_t = ee.FeatureCollection(npv_train.map(npv_addLabel));
+var npv_v = ee.FeatureCollection(npv_validate.map(npv_addLabel));
+var water_t = ee.FeatureCollection(water_train.map(water_addLabel));
+var water_v = ee.FeatureCollection(water_validate.map(water_addLabel));
+var shadow_t = ee.FeatureCollection(shadow_train.map(shadow_addLabel));
+var shadow_v = ee.FeatureCollection(shadow_validate.map(shadow_addLabel));
+
+// Merge validating data into single feature collection 
+var all_validatingData = water_v.merge(grass_v).merge(shrub_v).merge(npv_v).merge(impervious_v).merge(tree_v);
+
+///////////////////////////////////////////////////////////// 
+
+// URBAN LAND COVER CLASSIFICATION 
+
+// Combine into training and validating feature collections
+var naip_trainingData = grass_t.merge(tree_t).merge(shrub_t).merge(npv_t).merge(impervious_t).merge(shadow_t);
+var naip_bands = ['R_naip', 'G_naip', 'B_naip', 'NIR_naip', 'NDVI_naip', 'contrast_naip', 'ent_naip', 'corr_naip', 'inertia_naip'];
+// Clip classification domain to urban areas only
+var urbanSoCAB = stacked.clip(urban);
+// Get training data points from base imagery
+var training = stacked.select(naip_bands).sampleRegions({
+    collection: naip_trainingData,
+    properties: ['landcover'],
+    scale: 0.6,
+    tileScale: 16
+});
+// Train RF classifier 
+var rf_trained = ee.Classifier.randomForest(30).train(training, 'landcover', naip_bands);
+// Classify urban NAIP pixels
+var classified_naip = urbanSoCAB.select(naip_bands).classify(rf_trained);
+// Develop mask for shadow pixels
+var shadows = classified_naip.select("classification").eq(6);
+var shadow_free_image = urbanSoCAB.updateMask(shadows.not());
+var shadow_image = urbanSoCAB.updateMask(shadows);
+// Mask out shadow pixels 
+classified_naip = classified_naip.updateMask(shadows.not()); 
+
+///////////////////////////////////////////////////////////// 
+
+// URBAN LAND COVER CLASSIFICATION (SHADOW CORRECTION) - reclassifying "shadow" pixels from previous classification effort
+
+// Combine into training and validating feature collections (for reducing shadow effects)
+var shadow_trainingData = grass_t.merge(tree_t).merge(shrub_t).merge(npv_t).merge(impervious_t);
+// Bands: NAIP textural, Sentinel-2 spectral and textural 
+var shadow_bands = ['R_naip','G_naip','B_naip','NIR_naip','NDVI_naip','contrast_naip','ent_naip','corr_naip','inertia_naip','B_green','G_green','R_green','NIR_green','NDVI_green','contrast_green','ent_green','corr_green','inertia_green','B_non','G_non','R_non','NIR_non','NDVI_non','contrast_non','ent_non','corr_non','inertia_non'];
+shadow_bands = ['contrast_naip','ent_naip','corr_naip','inertia_naip','B_green','G_green','R_green','NIR_green','NDVI_green'];
+var shadow_training = stacked.select(shadow_bands).sampleRegions({
+    collection: shadow_trainingData,
+    properties: ['landcover'],
+    scale: 0.6,
+    tileScale: 16
+});
+// Train RF classifier 
+var rf_trained_shadow = ee.Classifier.randomForest(30).train(shadow_training, 'landcover', shadow_bands);
+// Classify NAIP shadow pixels
+var shadow_classified = shadow_image.select(shadow_bands).classify(rf_trained_shadow);
+
+///////////////////////////////////////////////////////////// 
+
+// NON-URBAN LAND COVER CLASSIFICATION 
+
+// Clip classification domain to non-urban areas only 
+var nonUrban = stacked.clip(non_urban);
+// Combine into training and validating feature collections 
+var sentinel_trainingData = grass_t.merge(tree_t).merge(shrub_t).merge(npv_t).merge(impervious_t);
+// Bands: Sentinel-2 spectral and textural
+var sentinel_bands = ['R_green','G_green','B_green','NIR_green','NDVI_green','contrast_green','ent_green','corr_green','inertia_green','R_non','G_non','B_non','NIR_non','NDVI_non','contrast_non','ent_non','corr_non','inertia_non'];
+var sentinel_training = nonUrban.select(sentinel_bands).sampleRegions({
+    collection: sentinel_trainingData,
+    properties: ['landcover'],
+    scale: 10,
+    tileScale: 16
+});
+// Train RF classifier
+var rf_trained_sentinel = ee.Classifier.randomForest(30).train(sentinel_training, 'landcover', sentinel_bands);
+// Classify non-urban Sentinel-2 pixels
+var nonUrban_classified = nonUrban.select(sentinel_bands).classify(rf_trained_sentinel);
+
+///////////////////////////////////////////////////////////// 
+
+// LAND COVER CLASSIFICATION POST-PROCESSING 
+
+// Merge all layers to get single shadow-corrected classification 
+var mergedCol = ee.ImageCollection([classified_naip, shadow_classified, nonUrban_classified]);
+var merged = mergedCol.mosaic();
+// Unmask water pixels 
+merged = merged.unmask(5,false);
+merged = merged.reproject(naip_proj, [0.6,0,499848,0,-0.6,3762312]);
+
+// Perform classification validation 
+var validating = ee.FeatureCollection(merged.sampleRegions({
+    collection: all_validatingData, // validation with impervious, tree, grass, shrub, npv, water 
+    properties: ['landcover'],
+    tileScale: 16}
+));
+
+///////////////////////////////////////////////////////////// 
+
+// DATA EXPORT (as necessary)
+
+// Export csv of validation data 
+Export.table.toDrive(validating);
+
+// Export Orange County classification
+Export.image.toAsset({
+  image: merged,
+  description: 'sentinel_naip_or',
+  region: socab_or, 
+  maxPixels: 1e11, 
+  scale: 0.6
+});
+// Export San Bernardino County classification 
+Export.image.toAsset({
+  image: merged,
+  description: 'sentinel_naip_sb',
+  region: socab_sb, 
+  maxPixels: 1e11, 
+  scale: 0.6
+});
+// Export Los Angeles County classification 
+Export.image.toAsset({
+  image: merged,
+  description: 'sentinel_naip_la',
+  region: socab_la, 
+  maxPixels: 1e11, 
+  scale: 0.6
+});
+// Export Riverside County classification 
+Export.image.toAsset({
+  image: merged,
+  description: 'sentinel_naip_ri',
+  region: socab_ri, 
+  maxPixels: 1e11, 
+  scale: 0.6
+});
+///////////////////////////////////////////////////////////// 
+
+
+
+
+
+

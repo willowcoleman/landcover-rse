@@ -1,0 +1,79 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var socab_la = ee.FeatureCollection("users/wcoleman/socab_la"),
+    socab_or = ee.FeatureCollection("users/wcoleman/socab_or"),
+    socab_shp = ee.FeatureCollection("users/wcoleman/socab_out"),
+    socab_ri = ee.FeatureCollection("users/wcoleman/socab_ri"),
+    socab_sb = ee.FeatureCollection("users/wcoleman/socab_sb");
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+///// Files to import /////
+// socab_shp: polygon of SoCAB (classification domain )
+// socab_la: polygon of Los Angeles County (subset of classification domain)
+// socab_ri: polygon of Riverside County (subset of classification domain)
+// socab_or: polygon of Orange County (subset of classification domain)
+// socab_sb: polygon of San Bernardino County (subset of classification domain)
+// classified: classified land cover image to aggregate to 30 m 
+
+///////////////////////////////////////////////////////////
+
+// AGGREGATE CLASSIFICATION TO 30M NLCD PIXELS 
+
+// Read in NLCD and clip to classification domain (SoCAB) 
+NLCD = NLCD.filterBounds(socab_shp).filterDate('2016-01-01', '2016-12-31').select("landcover");
+NLCD = NLCD.first().clip(socab_shp);
+
+var classified; // classified image to aggregate based on NLCD 
+
+// CALCULATE FRACTIONAL LAND COVER AT 30 M RESOLUTION 
+// Impervious fraction
+var imp_mask = classified.select("classification").eq(0);
+var imp_frac = imp_mask.eq(1).reduceResolution({
+  reducer: ee.Reducer.mean(),
+  maxPixels: 256,
+  bestEffort: true,
+}).reproject(NLCD.projection()).rename("impervious");
+// Tree fraction
+var tree_mask = classified.select("classification").eq(1);
+var tree_frac = tree_mask.eq(1).reduceResolution({
+  reducer: ee.Reducer.mean(),
+  maxPixels: 256,
+  bestEffort: true,
+}).reproject(NLCD.projection()).rename("tree");
+// Grass fraction
+var grass_mask = classified.select("classification").eq(2);
+var grass_frac = grass_mask.eq(1).reduceResolution({
+  reducer: ee.Reducer.mean(),
+  maxPixels: 256,
+  bestEffort: true,
+}).reproject(NLCD.projection()).rename("grass");
+// Shrub fraction
+var shrub_mask = classified.select("classification").eq(3);
+var shrub_frac = shrub_mask.eq(1).reduceResolution({
+  reducer: ee.Reducer.mean(),
+  maxPixels: 256,
+  bestEffort: true,
+}).reproject(NLCD.projection()).rename("shrub");
+// NPV fraction
+var npv_mask = classified.select("classification").eq(4);
+var npv_frac = npv_mask.eq(1).reduceResolution({
+  reducer: ee.Reducer.mean(),
+  maxPixels: 256,
+  bestEffort: true,
+}).reproject(NLCD.projection()).rename("npv");
+// Water fraction
+var water_mask = classified.select("classification").eq(5);
+var water_frac = water_mask.eq(1).reduceResolution({
+  reducer: ee.Reducer.mean(),
+  maxPixels: 256,
+  bestEffort: true,
+}).reproject(NLCD.projection()).rename("water");
+
+// Combine fractional cover masks to multi-band image 
+var multiband_fraction = imp_frac.addBands(tree_frac).addBands(grass_frac).addBands(shrub_frac).addBands(npv_frac).addBands(water_frac);
+
+// CALCULATE MAJORITY LAND COVER AT 30 M RESOLUTION 
+var classified_pixels = classified.select("classification");
+var majority = classified_pixels.reduceResolution({
+  reducer: ee.Reducer.mode(),
+  maxPixels: 256,
+  bestEffort: true,
+}).reproject(NLCD.projection()).rename("major");
