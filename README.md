@@ -14,8 +14,10 @@ EPSG: 4326/WGS84
 	- Urban regions classified with USDA National Agricultural Imagery Program (NAIP) imagery (0.6-1 m)
 	- Aggregated 30m pixels are aligned with projection of 2016 NLCD classification 
 
-classified_SoCAB: 1-band 0.6-10m classification of 6 land cover classes across SoCAB\
-30m_majority_SoCAB: 1-band 30m classification of majority land cover class within each 30m pixel across all of SoCAB\
+classified_SoCAB: 1-band 0.6-10m classification of 6 land cover classes across SoCAB
+
+30m_majority_SoCAB: 1-band 30m classification of majority land cover class within each 30m pixel across all of SoCAB
+
 30m_fractional_SoCAB: 5-band 30m classification of 60cm fractional land cover class within each 30m pixel, where bands correspond to the following labelling (band1 = impervious, band2 = tree, band3 = grass, band4 = shrub, band5 = npv, band6 = water)
 
 SoCAB: Southern California Air Basin\
