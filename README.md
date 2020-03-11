@@ -4,8 +4,8 @@
 1: Tree (mixed evergreen/deciduous)\
 2: Grass (assumed irrigated)\
 3: Shrub\
-4: Non-photosynthetic vegetation\	
-5: Water (masked using MNDWI/NDWI
+4: Non-photosynthetic vegetation<br/>	
+5: Water (masked using MNDWI/NDWI)
 
 EPSG: 4326/WGS84 
 
