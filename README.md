@@ -1,11 +1,11 @@
 ### Google Earth Engine code for Data Fusion of Sentinel-2 and NAIP Optical Imagery for High-Resolution Urban Vegetation Classification in the Los Angeles Megacity. 
 
-0: Impervious surface
-1: Tree (mixed evergreen/deciduous)
-2: Grass (assumed irrigated)
-3: Shrub 
-4: Non-photosynthetic vegetation	
-5: Water (masked using MNDWI/NDWI)
+0: Impervious surface\
+1: Tree (mixed evergreen/deciduous)\
+2: Grass (assumed irrigated)\
+3: Shrub\
+4: Non-photosynthetic vegetation\	
+5: Water (masked using MNDWI/NDWI\
 
 EPSG: 4326/WGS84 
 
