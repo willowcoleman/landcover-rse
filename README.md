@@ -9,6 +9,10 @@
 
 EPSG: 4326/WGS84 
 
+# Files:
+	- sentinel_naip_FINAL: classifies SoCAB at 0.6 - 10m resolution using supervised machine learning with Sentinel-2 and NAIP imagery in Google Earth Engine
+	- aggregateNAIP_FINAL: aggregates 0.6 - 10m product from sentinel_naipFINAL script to 30m fractional and majority pixels in Google Earth Engine 
+
 # Notes: 
 	- Non-urban and shadow regions classified with ESA Sentinel-2 imagery (10-60 m)
 	- Urban regions classified with USDA National Agricultural Imagery Program (NAIP) imagery (0.6-1 m)
