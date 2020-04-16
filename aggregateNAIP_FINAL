@@ -5,6 +5,7 @@ var socab_la = ee.FeatureCollection("users/wcoleman/socab_la"),
     socab_ri = ee.FeatureCollection("users/wcoleman/socab_ri"),
     socab_sb = ee.FeatureCollection("users/wcoleman/socab_sb");
 /***** End of imports. If edited, may not auto-convert in the playground. *****/
+
 ///// Files to import /////
 // socab_shp: polygon of SoCAB (classification domain )
 // socab_la: polygon of Los Angeles County (subset of classification domain)
@@ -18,62 +19,71 @@ var socab_la = ee.FeatureCollection("users/wcoleman/socab_la"),
 // AGGREGATE CLASSIFICATION TO 30M NLCD PIXELS 
 
 // Read in NLCD and clip to classification domain (SoCAB) 
-NLCD = NLCD.filterBounds(socab_shp).filterDate('2016-01-01', '2016-12-31').select("landcover");
-NLCD = NLCD.first().clip(socab_shp);
+var grid = NLCD.filterBounds(socab_shp).filterDate('2016-01-01', '2016-12-31').select("landcover");
+grid = NLCD.first().clip(socab_shp);
 
-var classified; // classified image to aggregate based on NLCD 
+// Calculate number of pixels in each aggregation pixels 
+var gridScale = grid.projection().nominalScale();
+gridScale = gridScale.multiply(gridScale); 
+var classifiedScale = classified.projection().nominalScale();
+classifiedScale = classifiedScale.multiply(classifiedScale);
+var pixNum = ee.Number(gridScale.divide(classifiedScale)).int();
 
-// CALCULATE FRACTIONAL LAND COVER AT 30 M RESOLUTION 
+// CALCULATE FRACTIONAL LAND COVER 
 // Impervious fraction
-var imp_mask = classified.select("classification").eq(0);
+var imp_mask = classified.eq(0);
 var imp_frac = imp_mask.eq(1).reduceResolution({
   reducer: ee.Reducer.mean(),
-  maxPixels: 256,
+  maxPixels: pixNum,
   bestEffort: true,
-}).reproject(NLCD.projection()).rename("impervious");
+}).reproject(grid.projection()).rename("impervious");
 // Tree fraction
-var tree_mask = classified.select("classification").eq(1);
+var tree_mask = classified.eq(1);
 var tree_frac = tree_mask.eq(1).reduceResolution({
   reducer: ee.Reducer.mean(),
-  maxPixels: 256,
+  maxPixels: pixNum,
   bestEffort: true,
-}).reproject(NLCD.projection()).rename("tree");
+}).reproject(grid.projection()).rename("tree");
 // Grass fraction
-var grass_mask = classified.select("classification").eq(2);
+var grass_mask = classified.eq(2);
 var grass_frac = grass_mask.eq(1).reduceResolution({
   reducer: ee.Reducer.mean(),
-  maxPixels: 256,
+  maxPixels: pixNum,
   bestEffort: true,
-}).reproject(NLCD.projection()).rename("grass");
+}).reproject(grid.projection()).rename("grass");
 // Shrub fraction
-var shrub_mask = classified.select("classification").eq(3);
+var shrub_mask = classified.eq(3);
 var shrub_frac = shrub_mask.eq(1).reduceResolution({
   reducer: ee.Reducer.mean(),
-  maxPixels: 256,
+  maxPixels: pixNum,
   bestEffort: true,
-}).reproject(NLCD.projection()).rename("shrub");
+}).reproject(grid.projection()).rename("shrub");
 // NPV fraction
-var npv_mask = classified.select("classification").eq(4);
+var npv_mask = classified.eq(4);
 var npv_frac = npv_mask.eq(1).reduceResolution({
   reducer: ee.Reducer.mean(),
-  maxPixels: 256,
+  maxPixels: pixNum,
   bestEffort: true,
-}).reproject(NLCD.projection()).rename("npv");
+}).reproject(grid.projection()).rename("npv");
 // Water fraction
-var water_mask = classified.select("classification").eq(5);
+var water_mask = classified.eq(5);
 var water_frac = water_mask.eq(1).reduceResolution({
   reducer: ee.Reducer.mean(),
-  maxPixels: 256,
+  maxPixels: pixNum,
   bestEffort: true,
-}).reproject(NLCD.projection()).rename("water");
+}).reproject(grid.projection()).rename("water");
 
 // Combine fractional cover masks to multi-band image 
 var multiband_fraction = imp_frac.addBands(tree_frac).addBands(grass_frac).addBands(shrub_frac).addBands(npv_frac).addBands(water_frac);
 
-// CALCULATE MAJORITY LAND COVER AT 30 M RESOLUTION 
-var classified_pixels = classified.select("classification");
-var majority = classified_pixels.reduceResolution({
+// CALCULATE MAJORITY LAND COVER
+var majority = classified.reduceResolution({
   reducer: ee.Reducer.mode(),
-  maxPixels: 256,
+  maxPixels: pixNum,
   bestEffort: true,
-}).reproject(NLCD.projection()).rename("major");
+}).reproject(grid.projection()).rename("major");
+
+var newPal = ['f0e6b2','226c29','8fc629','d34cbb','4500b4','cyan']; // impervious, tree, grass, chaparral, npv
+Map.addLayer(classified,{min:0, max:5, palette: newPal}, 'original');
+Map.addLayer(majority,{min:0, max:5, palette: newPal}, 'aggregated');
+Map.addLayer(multiband_fraction, {}, 'frac');
